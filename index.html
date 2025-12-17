@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>按摩語音計時器</title>
+    <style>
+        body { font-family: sans-serif; margin: 0; background-color: #000; color: white; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        .display { flex: 1.5; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        #timer-display { font-size: 5.5rem; font-weight: bold; color: #00FF00; }
+        #status { font-size: 1.5rem; color: #FFD700; margin-bottom: 5px; height: 1.8rem; }
+        .grid { flex: 2; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 15px; padding: 15px; }
+        button { border: none; border-radius: 20px; font-size: 2rem; font-weight: bold; color: white; touch-action: manipulation; }
+        .btn-10 { background-color: #1B5E20; }
+        .btn-1 { background-color: #4CAF50; }
+        .btn-start { background-color: #0D47A1; }
+        .btn-pause { background-color: #E65100; }
+        button:active { filter: brightness(1.5); }
+    </style>
+</head>
+<body>
+
+    <audio id="silent-audio" loop><source src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==" type="audio/wav"></audio>
+
+    <div class="display">
+        <div id="status">請按鈕設定時間</div>
+        <div id="timer-display">00:00</div>
+    </div>
+
+    <div class="grid">
+        <button class="btn-10" onclick="addTime(10)">＋10 分</button>
+        <button class="btn-1" onclick="addTime(1)">＋1 分</button>
+        <button class="btn-start" id="start-btn">開始 / 重設</button>
+        <button class="btn-pause" onclick="togglePause()">暫停 / 繼續</button>
+    </div>
+
+    <script>
+        let totalSeconds = 0;
+        let timerInterval = null;
+        let isPaused = false;
+        let pressTimer;
+        let synth = window.speechSynthesis;
+
+        // 核心修正：強制喚醒語音
+        function speak(text) {
+            synth.cancel(); 
+            const msg = new SpeechSynthesisUtterance(text);
+            msg.lang = 'zh-TW';
+            msg.rate = 1.0;
+            
+            // 針對某些 App 內核需要重複調用一次
+            setTimeout(() => {
+                synth.speak(msg);
+            }, 50);
+        }
+
+        function updateDisplay() {
+            let m = Math.floor(totalSeconds / 60);
+            let s = totalSeconds % 60;
+            document.getElementById('timer-display').textContent = 
+                `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+
+        function addTime(mins) {
+            if (timerInterval) return;
+            totalSeconds += mins * 60;
+            updateDisplay();
+            speak(Math.floor(totalSeconds / 60) + "分鐘");
+            // 嘗試啟動無聲音軌以維持權限
+            document.getElementById('silent-audio').play().catch(()=>{});
+        }
+
+        function togglePause() {
+            if (!timerInterval) return;
+            isPaused = !isPaused;
+            if (isPaused) {
+                document.getElementById('status').textContent = "已暫停";
+                speak(`暫停，剩餘${Math.floor(totalSeconds / 60)}分鐘`);
+            } else {
+                document.getElementById('status').textContent = "計時中";
+                speak("計時繼續");
+            }
+        }
+
+        function startTimer() {
+            if (totalSeconds <= 0) { speak("請設定時間"); return; }
+            if (timerInterval) return;
+
+            speak(`按摩時間${totalSeconds/60}分鐘，計時開始`);
+            document.getElementById('status').textContent = "計時中";
+
+            timerInterval = setInterval(() => {
+                if (!isPaused) {
+                    totalSeconds--;
+                    updateDisplay();
+                    
+                    if (totalSeconds > 0) {
+                        // 每 5 分鐘播報
+                        if (totalSeconds > 300 && totalSeconds % 300 === 0) {
+                            speak(`剩餘${totalSeconds/60}分鐘`);
+                        } 
+                        // 最後 5 分鐘每分鐘播報
+                        else if (totalSeconds <= 300 && totalSeconds % 60 === 0) {
+                            speak(`剩餘${totalSeconds/60}分鐘`);
+                        }
+                    } else {
+                        clearInterval(timerInterval);
+                        timerInterval = null;
+                        speak("按摩時間結束");
+                        document.getElementById('status').textContent = "已結束";
+                    }
+                }
+            }, 1000);
+        }
+
+        function resetTimer() {
+            clearInterval(timerInterval);
+            timerInterval = null;
+            totalSeconds = 0;
+            isPaused = false;
+            updateDisplay();
+            document.getElementById('status').textContent = "已歸零";
+            speak("計時歸零");
+        }
+
+        // 長按處理
+        const startBtn = document.getElementById('start-btn');
+        const handleStart = (e) => {
+            e.preventDefault();
+            pressTimer = setTimeout(resetTimer, 2000);
+        };
+        const handleEnd = (e) => {
+            e.preventDefault();
+            clearTimeout(pressTimer);
+            if (!timerInterval && totalSeconds > 0) startTimer();
+        };
+
+        startBtn.addEventListener('touchstart', handleStart);
+        startBtn.addEventListener('touchend', handleEnd);
+        startBtn.addEventListener('mousedown', handleStart);
+        startBtn.addEventListener('mouseup', handleEnd);
+    </script>
+</body>
+</html>
